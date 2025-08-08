@@ -1,12 +1,14 @@
+// src/app/api/blocks/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 // Обновить блок
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await context.params
     const email = request.headers.get('x-user-email')
     const { type, title, url, content, isActive } = await request.json()
     
@@ -29,9 +31,10 @@ export async function PUT(
 // Удалить блок
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const params = await context.params
     const email = request.headers.get('x-user-email')
     
     if (!email) {

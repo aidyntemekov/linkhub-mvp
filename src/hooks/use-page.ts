@@ -1,13 +1,6 @@
+// src/hooks/use-page.ts
 import { useState, useEffect } from 'react'
-import { Block } from '@/types'
-
-interface Page {
-  id: string
-  title: string
-  description?: string
-  themeId: string
-  blocks: Block[]
-}
+import { Block, Page } from '@/types'
 
 export function usePage() {
   const [page, setPage] = useState<Page | null>(null)
@@ -17,6 +10,8 @@ export function usePage() {
   const fetchPage = async () => {
     try {
       setIsLoading(true)
+      setError(null)
+      
       const userData = localStorage.getItem('user')
       if (!userData) throw new Error('User not found')
       
@@ -58,7 +53,7 @@ export function usePage() {
       if (!response.ok) throw new Error('Failed to update page')
       
       const data = await response.json()
-      setPage(prev => prev ? { ...prev, ...data.page } : data.page)
+      setPage(prev => prev ? { ...prev, ...updates } : data.page)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     }
@@ -85,7 +80,7 @@ export function usePage() {
       const data = await response.json()
       setPage(prev => prev ? {
         ...prev,
-        blocks: [...prev.blocks, data.block]
+        blocks: [...(prev.blocks || []), data.block]
       } : null)
       
       return data.block
@@ -114,10 +109,12 @@ export function usePage() {
       if (!response.ok) throw new Error('Failed to update block')
       
       const data = await response.json()
+      
+      // Обновляем локальное состояние
       setPage(prev => prev ? {
         ...prev,
-        blocks: prev.blocks.map(block => 
-          block.id === blockId ? { ...block, ...data.block } : block
+        blocks: (prev.blocks || []).map(block => 
+          block.id === blockId ? { ...block, ...updates } : block
         )
       } : null)
     } catch (err) {
@@ -141,9 +138,10 @@ export function usePage() {
       
       if (!response.ok) throw new Error('Failed to delete block')
       
+      // Удаляем блок из локального состояния
       setPage(prev => prev ? {
         ...prev,
-        blocks: prev.blocks.filter(block => block.id !== blockId)
+        blocks: (prev.blocks || []).filter(block => block.id !== blockId)
       } : null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')

@@ -10,16 +10,12 @@
 # Сборка Next.js
 /.next/
 /out/
-/build/
 
-# Логи
+# Логи и кеши
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
-
-# Кеши
 .cache/
-/*.tgz
 
 # Системные файлы
 .DS_Store
@@ -33,15 +29,19 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# IDE и редакторы
+# IDE
 .vscode/
-.idea/
 
 # Отчёты и покрытие
 coverage/
 /*.lcov
 
-# Остальное (необязательно, если не используете)
-# .serverless/
-# .firebase/
-# *.pem
+# Архивы
+*.tgz
+
+# Прочее (раскомментируйте, если нужно)
+/build/
+/.idea/
+#.serverless/
+#.firebase/
+#*.pem
