@@ -7,9 +7,22 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 // Утилита для генерации username из email
+// Обновите функцию generateUsername в src/lib/utils.ts
+
 export function generateUsername(email: string): string {
-  const baseUsername = email.split('@')[0].toLowerCase()
-  const randomSuffix = Math.floor(Math.random() * 1000)
+  let baseUsername = email.split('@')[0].toLowerCase()
+  
+  // Убираем цифры и знаки подчеркивания в конце
+  baseUsername = baseUsername.replace(/[_\d]+$/, '')
+  
+  // Если получилось слишком коротко, оставляем исходный вариант
+  if (baseUsername.length < 3) {
+    baseUsername = email.split('@')[0].toLowerCase()
+  }
+  
+  // Добавляем случайное короткое число
+  const randomSuffix = Math.floor(Math.random() * 99) + 1
+  
   return `${baseUsername}${randomSuffix}`
 }
 

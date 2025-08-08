@@ -90,7 +90,16 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    return NextResponse.json({ page: user?.page })
+    return NextResponse.json({ 
+      page: {
+        ...user?.page,
+        user: {
+          username: user?.username,
+          name: user?.name,
+          email: user?.email
+        }
+      }
+    })
   } catch (error) {
     console.error('Error fetching page:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

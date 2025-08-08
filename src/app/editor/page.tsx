@@ -36,10 +36,35 @@ export default function EditorPage() {
 
   const handleAddBlock = async (type: string) => {
     try {
+      let defaultTitle = 'Новый блок'
+      let defaultUrl = undefined
+      
+      switch (type) {
+        case 'LINK':
+          defaultTitle = 'Новая ссылка'
+          defaultUrl = 'https://example.com'
+          break
+        case 'EMAIL':
+          defaultTitle = 'Мой Email'
+          defaultUrl = 'your@email.com'
+          break
+        case 'PHONE':
+          defaultTitle = 'Мой телефон'
+          defaultUrl = '+7 777 123 45 67'
+          break
+        case 'SOCIAL':
+          defaultTitle = 'Мой Instagram'
+          defaultUrl = 'https://instagram.com/username'
+          break
+        case 'TEXT':
+          defaultTitle = 'Просто текст'
+          break
+      }
+      
       await addBlock({
         type: type as any,
-        title: type === 'LINK' ? 'Новая ссылка' : 'Новый блок',
-        url: type === 'LINK' ? 'https://example.com' : undefined
+        title: defaultTitle,
+        url: defaultUrl
       })
     } catch (err) {
       console.error('Failed to add block:', err)
@@ -48,6 +73,13 @@ export default function EditorPage() {
 
   const handleUpdateBlock = async (blockId: string, updates: any) => {
     try {
+      // Для EMAIL и PHONE блоков, если меняется url, то title тоже меняется
+      if (updates.url && page.blocks) {
+        const block = page.blocks.find(b => b.id === blockId)
+        if (block && (block.type === 'EMAIL' || block.type === 'PHONE')) {
+          updates.title = updates.url
+        }
+      }
       await updateBlock(blockId, updates)
     } catch (err) {
       console.error('Failed to update block:', err)
@@ -135,7 +167,7 @@ export default function EditorPage() {
             <div className="bg-white rounded-lg shadow-sm p-6">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-medium">Блоки</h2>
-                <div className="flex space-x-2">
+                <div className="flex flex-wrap gap-2">
                   <Button 
                     size="sm" 
                     onClick={() => handleAddBlock('LINK')}
@@ -151,9 +183,32 @@ export default function EditorPage() {
                     <Plus className="h-4 w-4 mr-1" />
                     Текст
                   </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => handleAddBlock('EMAIL')}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Email
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => handleAddBlock('PHONE')}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Телефон
+                  </Button>
+                  <Button 
+                    size="sm" 
+                    variant="outline"
+                    onClick={() => handleAddBlock('SOCIAL')}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Соцсеть
+                  </Button>
                 </div>
               </div>
-              
               <div className="space-y-3">
                 {page.blocks?.map((block, index) => (
                   <div key={block.id} className="border border-gray-200 rounded-lg p-4">
@@ -169,20 +224,49 @@ export default function EditorPage() {
                       </button>
                     </div>
                     <div className="space-y-2">
-                      <input
-                        type="text"
-                        value={block.title || ''}
-                        onChange={(e) => handleUpdateBlock(block.id, { title: e.target.value })}
-                        className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                        placeholder="Заголовок блока"
-                      />
+                      {(block.type === 'LINK' || block.type === 'SOCIAL' || block.type === 'TEXT') && (
+                        <input
+                          type="text"
+                          value={block.title || ''}
+                          onChange={(e) => handleUpdateBlock(block.id, { title: e.target.value })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          placeholder="Заголовок блока"
+                        />
+                      )}
                       {block.type === 'LINK' && (
                         <input
                           type="url"
                           value={block.url || ''}
                           onChange={(e) => handleUpdateBlock(block.id, { url: e.target.value })}
-                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm mt-2"
                           placeholder="https://example.com"
+                        />
+                      )}
+                      {block.type === 'EMAIL' && (
+                        <input
+                          type="email"
+                          value={block.url || ''}
+                          onChange={(e) => handleUpdateBlock(block.id, { url: e.target.value })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm mt-2"
+                          placeholder="your@email.com"
+                        />
+                      )}
+                      {block.type === 'PHONE' && (
+                        <input
+                          type="tel"
+                          value={block.url || ''}
+                          onChange={(e) => handleUpdateBlock(block.id, { url: e.target.value })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm mt-2"
+                          placeholder="+7 777 123 45 67"
+                        />
+                      )}
+                      {block.type === 'SOCIAL' && (
+                        <input
+                          type="url"
+                          value={block.url || ''}
+                          onChange={(e) => handleUpdateBlock(block.id, { url: e.target.value })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-sm mt-2"
+                          placeholder="https://instagram.com/username"
                         />
                       )}
                       <div className="flex items-center space-x-2">
@@ -223,7 +307,9 @@ export default function EditorPage() {
               </div>
               
               <div className="p-6 space-y-3">
-                {page.blocks?.filter(block => block.isActive)?.map((block) => (
+                {page.blocks
+                ?.filter(block => block.isActive)
+                ?.map(block => (
                   <div key={block.id}>
                     {block.type === 'LINK' ? (
                       <a
@@ -234,6 +320,29 @@ export default function EditorPage() {
                       >
                         {block.title}
                       </a>
+                    ) : block.type === 'EMAIL' ? (
+                      <a
+                        href={`mailto:${block.url}`}
+                        className="block w-full bg-blue-500 text-white text-center py-3 px-4 rounded-lg hover:bg-blue-600 transition-colors"
+                      >
+                        {block.title}
+                      </a>
+                    ) : block.type === 'PHONE' ? (
+                      <a
+                        href={`tel:${block.url}`}
+                        className="block w-full bg-green-500 text-white text-center py-3 px-4 rounded-lg hover:bg-green-600 transition-colors"
+                      >
+                        {block.title}
+                      </a>
+                    ) : block.type === 'SOCIAL' ? (
+                      <a
+                        href={block.url || '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white text-center py-3 px-4 rounded-lg hover:shadow-lg transition-all"
+                      >
+                        {block.title}
+                      </a>
                     ) : (
                       <div className="text-center py-2 text-gray-700">
                         {block.title}
@@ -241,7 +350,6 @@ export default function EditorPage() {
                     )}
                   </div>
                 ))}
-                
                 {(!page.blocks?.filter(block => block.isActive)?.length) && (
                   <div className="text-center py-8 text-gray-400">
                     <p>Добавьте блоки, чтобы увидеть превью</p>
