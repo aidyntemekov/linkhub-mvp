@@ -45,6 +45,7 @@ model Block {
   type      BlockType
   title     String
   url       String?
+  banner    String?
   content   Json?
   position  Int
   isActive  Boolean   @default(true)

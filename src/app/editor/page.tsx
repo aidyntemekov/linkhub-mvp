@@ -9,6 +9,7 @@ import Link from 'next/link'
 export default function EditorPage() {
   const { page, isLoading, error, addBlock, updatePage, updateBlock, deleteBlock } = usePage()
   const [showPreview, setShowPreview] = useState(false)
+  const [uploadingBanners, setUploadingBanners] = useState<Set<string>>(new Set())
 
   if (isLoading) {
     return (
@@ -91,6 +92,38 @@ export default function EditorPage() {
       await deleteBlock(blockId)
     } catch (err) {
       console.error('Failed to delete block:', err)
+    }
+  }
+
+  // Функция загрузки баннера
+  const handleBannerUpload = async (blockId: string, file: File) => {
+    try {
+      setUploadingBanners(prev => new Set(prev).add(blockId))
+      
+      const formData = new FormData()
+      formData.append('banner', file)
+      
+      const response = await fetch('/api/upload/banner', {
+        method: 'POST',
+        body: formData
+      })
+      
+      if (!response.ok) throw new Error('Upload failed')
+      
+      const data = await response.json()
+      
+      // Обновляем блок с новым URL баннера
+      await handleUpdateBlock(blockId, { banner: data.url })
+      
+    } catch (error) {
+      console.error('Banner upload failed:', error)
+      alert('Ошибка загрузки изображения')
+    } finally {
+      setUploadingBanners(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(blockId)
+        return newSet
+      })
     }
   }
 
@@ -234,6 +267,7 @@ export default function EditorPage() {
                         />
                       )}
                       {block.type === 'LINK' && (
+                        <>
                         <input
                           type="url"
                           value={block.url || ''}
@@ -241,6 +275,53 @@ export default function EditorPage() {
                           className="w-full px-2 py-1 border border-gray-300 rounded text-sm mt-2"
                           placeholder="https://example.com"
                         />
+                        {/* Загрузка баннера */}
+                        <div className="mt-2">
+                          <label className="block text-xs text-gray-600 mb-1">
+                            Баннер (необязательно)
+                          </label>
+                          
+                          {block.banner ? (
+                            <div className="relative">
+                              <img 
+                                src={block.banner} 
+                                alt="Баннер"
+                                className="w-full h-20 object-cover rounded border"
+                              />
+                              <button
+                                onClick={() => handleUpdateBlock(block.id, { banner: '' })}
+                                className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-600"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="border-2 border-dashed border-gray-300 rounded p-4 text-center">
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) handleBannerUpload(block.id, file)
+                                }}
+                                className="hidden"
+                                id={`banner-upload-${block.id}`}
+                                disabled={uploadingBanners.has(block.id)}
+                              />
+                              <label 
+                                htmlFor={`banner-upload-${block.id}`}
+                                className="cursor-pointer text-sm text-gray-600 hover:text-primary"
+                              >
+                                {uploadingBanners.has(block.id) ? (
+                                  <span>Загружаем...</span>
+                                ) : (
+                                  <span>📷 Выбрать изображение</span>
+                                )}
+                              </label>
+                            </div>
+                          )}
+                        </div>
+                      </>
                       )}
                       {block.type === 'EMAIL' && (
                         <input
