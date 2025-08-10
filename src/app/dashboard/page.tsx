@@ -66,13 +66,18 @@ export default function DashboardPage() {
               </p>
             </div>
             
-            <div className="mt-6">
-              <Link href="/editor">
-                <button className="bg-primary text-white px-4 py-2 rounded hover:bg-primary/90">
-                  Редактировать страницу
-                </button>
-              </Link>
-            </div>
+            <div className="mt-6 space-x-4">
+            <Link href="/editor">
+              <button className="bg-primary text-white px-4 py-2 rounded hover:bg-primary/90">
+                Редактировать страницу
+              </button>
+            </Link>
+            <Link href="/analytics">
+              <button className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">
+                📊 Аналитика
+              </button>
+            </Link>
+          </div>
           </div>
         </div>
       </main>
