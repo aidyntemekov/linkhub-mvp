@@ -26,6 +26,7 @@ export interface Page {
   createdAt: Date
   updatedAt: Date
   blocks: Block[]
+  banner?: string | null
   user?: {
     id: string
     email: string
