@@ -320,7 +320,7 @@ export default function LinkBannerUpload({
                          linear-gradient(to right, rgba(255,255,255,0.3) 1px, transparent 1px),
                          linear-gradient(to bottom, rgba(255,255,255,0.3) 1px, transparent 1px)
                        `,
-                       backgroundSize: '150px 50px'
+                       backgroundSize: '150px 50px'  // возвращаем обратно
                      }} 
                 />
               </div>
@@ -392,8 +392,11 @@ export default function LinkBannerUpload({
       {/* Текущий баннер или плейсхолдер */}
       <div className="relative">
         <div 
-          className="w-full h-20 bg-gradient-to-r from-gray-100 to-gray-200 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden cursor-pointer hover:border-gray-400 transition-colors"
-          style={{ aspectRatio: '3/1' }}
+          className="bg-gradient-to-r from-gray-100 to-gray-200 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden cursor-pointer hover:border-gray-400 transition-colors"
+          style={{ 
+            width: '75%',  // уменьшаем ширину на 25%
+            aspectRatio: '3/1'  // сохраняем пропорции 3:1
+          }}
           onClick={() => fileInputRef.current?.click()}
         >
           {currentBanner ? (
@@ -431,6 +434,21 @@ export default function LinkBannerUpload({
       <p className="text-xs text-gray-500">
         Рекомендуемый размер: 600×200 пикселей (соотношение 3:1)
       </p>
+
+      {/* DEBUG: Кнопка для тестирования состояния */}
+      <Button 
+        variant="outline" 
+        size="sm" 
+        onClick={() => {
+          console.log('🟡 Manual test button clicked')
+          console.log('🟡 Current state:', { mounted, showCropper, selectedImage: !!selectedImage })
+          setShowCropper(true)
+          setSelectedImage('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPjYwMHgyMDA8L3RleHQ+PC9zdmc+')
+          console.log('🟡 State should be set now')
+        }}
+      >
+        🧪 Тест кроппера
+      </Button>
 
       {/* Скрытый input для файлов */}
       <input
