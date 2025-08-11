@@ -2,8 +2,9 @@
 
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
-import { Upload, X, Move, RotateCcw, Image } from 'lucide-react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { createPortal } from 'react-dom'
+import { Upload, X, Move, RotateCcw, Image as ImageIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface LinkBannerUploadProps {
@@ -24,41 +25,103 @@ export default function LinkBannerUpload({
   const [imageScale, setImageScale] = useState(1)
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [mounted, setMounted] = useState(false)
   
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageRef = useRef<HTMLImageElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  // Проверяем что компонент смонтирован (для SSR)
+  useEffect(() => {
+    setMounted(true)
+    console.log('🟢 Component mounted') // DEBUG
+  }, [])
+
+  // Логируем изменения состояния
+  useEffect(() => {
+    console.log('🟦 State changed:', { 
+      mounted, 
+      showCropper, 
+      hasSelectedImage: !!selectedImage,
+      isUploading 
+    }) // DEBUG
+  }, [mounted, showCropper, selectedImage, isUploading])
+
+  // Блокируем скролл body когда показан кроппер
+  useEffect(() => {
+    if (showCropper) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [showCropper])
 
   // Размеры для баннеров LINK блоков (3:1)
   const BANNER_WIDTH = 600  // базовая ширина для кроппера
   const BANNER_HEIGHT = 200 // высота (3:1)
   const ASPECT_RATIO = 3    // 3:1
 
+  // DEBUG: Логируем состояние в каждом рендере
+  console.log('🟦 RENDER STATE:', { 
+    mounted, 
+    showCropper, 
+    hasSelectedImage: !!selectedImage,
+    selectedImageLength: selectedImage?.length 
+  })
+
   const handleFileSelect = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('🟢 Step 1: File select triggered') // DEBUG
+    
     const file = event.target.files?.[0]
-    if (!file) return
+    console.log('🟢 Step 2: File object:', file) // DEBUG
+    
+    if (!file) {
+      console.log('🔴 No file selected') // DEBUG
+      return
+    }
 
     // Проверяем тип файла
     if (!file.type.startsWith('image/')) {
+      console.log('🔴 Wrong file type:', file.type) // DEBUG
       alert('Пожалуйста, выберите изображение')
       return
     }
 
     // Проверяем размер файла (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
+      console.log('🔴 File too large:', file.size) // DEBUG
       alert('Размер файла не должен превышать 10MB')
       return
     }
 
+    console.log('🟢 Step 3: Starting FileReader...') // DEBUG
+    
     const reader = new FileReader()
     reader.onload = (e) => {
+      console.log('🟢 Step 4: FileReader onload triggered') // DEBUG
+      
       const imageUrl = e.target?.result as string
+      console.log('🟢 Step 5: Image URL created, length:', imageUrl?.length) // DEBUG
+      
+      console.log('🟢 Step 6: Setting state...') // DEBUG
       setSelectedImage(imageUrl)
       setShowCropper(true)
       setCropPosition({ x: 0, y: 0 })
       setImageScale(1)
+      
+      console.log('🟢 Step 7: State should be set now') // DEBUG
     }
+    
+    reader.onerror = (e) => {
+      console.error('🔴 FileReader error:', e) // DEBUG
+    }
+    
     reader.readAsDataURL(file)
+    console.log('🟢 Step 8: FileReader.readAsDataURL called') // DEBUG
   }, [])
 
   const handleImageLoad = useCallback(() => {
@@ -185,6 +248,141 @@ export default function LinkBannerUpload({
     }
   }, [])
 
+  // Компонент кроппера для портала - выносим из рендера
+  const cropperModal = useMemo(() => {
+    console.log('🔧 useMemo recalculating cropperModal, selectedImage:', !!selectedImage)
+    
+    if (!selectedImage) {
+      console.log('🔴 No selectedImage, returning null')
+      return null
+    }
+    
+    console.log('🟢 Creating cropper modal JSX')
+    return (
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4"
+        style={{ 
+          zIndex: 9999,
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center'
+        }}
+      >
+        <div 
+          className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+          style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            padding: '24px',
+            maxWidth: '672px',
+            width: '100%',
+            maxHeight: '90vh',
+            overflowY: 'auto',
+            position: 'relative',
+            zIndex: 10000
+          }}
+        >
+          <h3 className="text-lg font-semibold mb-4">Настройка баннера</h3>
+          
+          <div className="flex justify-center mb-4">
+            <div 
+              className="relative border-2 border-gray-300 rounded-lg overflow-hidden cursor-move bg-gray-100 shadow-inner"
+              style={{ width: '450px', height: '150px' }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+            >
+              <img
+                ref={imageRef}
+                src={selectedImage}
+                alt="Crop preview"
+                className="absolute select-none"
+                style={{
+                  transform: `translate(${cropPosition.x}px, ${cropPosition.y}px) scale(${imageScale})`,
+                  transformOrigin: '0 0',
+                  cursor: isDragging ? 'grabbing' : 'grab'
+                }}
+                onLoad={handleImageLoad}
+                draggable={false}
+              />
+              
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="w-full h-full border border-white border-opacity-40" 
+                     style={{
+                       backgroundImage: `
+                         linear-gradient(to right, rgba(255,255,255,0.3) 1px, transparent 1px),
+                         linear-gradient(to bottom, rgba(255,255,255,0.3) 1px, transparent 1px)
+                       `,
+                       backgroundSize: '150px 50px'
+                     }} 
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="text-center mb-4">
+            <div className="inline-flex items-center text-sm text-gray-500">
+              <Move className="h-4 w-4 mr-2" />
+              Перетаскивайте изображение для позиционирования
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Масштаб
+              </label>
+              <div className="flex items-center space-x-3">
+                <span className="text-sm text-gray-500">0.1×</span>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="3"
+                  step="0.1"
+                  value={imageScale}
+                  onChange={handleScaleChange}
+                  className="flex-1"
+                />
+                <span className="text-sm text-gray-500">3×</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={resetCrop}
+                  title="Сбросить позицию"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-3 pt-2">
+              <Button
+                variant="outline"
+                onClick={handleCancel}
+                disabled={isUploading}
+              >
+                Отмена
+              </Button>
+              <Button
+                onClick={cropAndUploadImage}
+                disabled={isUploading}
+              >
+                {isUploading ? 'Сохранение...' : 'Сохранить баннер'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }, [selectedImage, cropPosition, imageScale, isDragging, isUploading, handleMouseDown, handleMouseMove, handleMouseUp, handleImageLoad, handleScaleChange, resetCrop, handleCancel, cropAndUploadImage])
+
   return (
     <div className="space-y-3">
       <label className="block text-sm font-medium text-gray-700">
@@ -206,7 +404,7 @@ export default function LinkBannerUpload({
             />
           ) : (
             <div className="text-center">
-              <Image className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+              <ImageIcon className="h-8 w-8 text-gray-400 mx-auto mb-2" />
               <p className="text-sm text-gray-500">
                 Нажмите для загрузки баннера
               </p>
@@ -243,108 +441,49 @@ export default function LinkBannerUpload({
         className="hidden"
       />
 
-      {/* Кроппер - ИСПРАВЛЕННОЕ ПОЗИЦИОНИРОВАНИЕ */}
-      {showCropper && selectedImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-auto">
-            <h3 className="text-lg font-semibold mb-4">Настройка баннера</h3>
+      {/* Портал для кроппера */}
+      {(() => {
+        const shouldRender = mounted && showCropper && selectedImage
+        console.log('🔍 Portal check:', { 
+          mounted, 
+          showCropper, 
+          hasSelectedImage: !!selectedImage, 
+          shouldRender: !!shouldRender,
+          documentBody: !!document?.body
+        })
+        
+        if (shouldRender) {
+          console.log('🟢 Rendering portal with cropperModal:', !!cropperModal)
+          try {
+            const portal = createPortal(cropperModal, document.body)
+            console.log('🟢 Portal created successfully:', !!portal)
             
-            {/* Область кроппинга - соотношение 3:1 */}
-            <div className="flex justify-center mb-4">
-              <div 
-                className="relative border-2 border-gray-300 rounded-lg overflow-hidden cursor-move bg-gray-100 shadow-inner"
-                style={{ width: '450px', height: '150px' }}
-                onMouseDown={handleMouseDown}
-                onMouseMove={handleMouseMove}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-              >
-                <img
-                  ref={imageRef}
-                  src={selectedImage}
-                  alt="Crop preview"
-                  className="absolute select-none"
-                  style={{
-                    transform: `translate(${cropPosition.x}px, ${cropPosition.y}px) scale(${imageScale})`,
-                    transformOrigin: '0 0',
-                    cursor: isDragging ? 'grabbing' : 'grab'
-                  }}
-                  onLoad={handleImageLoad}
-                  draggable={false}
-                />
-                
-                {/* Сетка для лучшего позиционирования */}
-                <div className="absolute inset-0 pointer-events-none">
-                  <div className="w-full h-full border border-white border-opacity-40" 
-                       style={{
-                         backgroundImage: `
-                           linear-gradient(to right, rgba(255,255,255,0.3) 1px, transparent 1px),
-                           linear-gradient(to bottom, rgba(255,255,255,0.3) 1px, transparent 1px)
-                         `,
-                         backgroundSize: '150px 50px'
-                       }} 
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Иконка перемещения */}
-            <div className="text-center mb-4">
-              <div className="inline-flex items-center text-sm text-gray-500">
-                <Move className="h-4 w-4 mr-2" />
-                Перетаскивайте изображение для позиционирования
-              </div>
-            </div>
-
-            {/* Контролы */}
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Масштаб
-                </label>
-                <div className="flex items-center space-x-3">
-                  <span className="text-sm text-gray-500">0.1×</span>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="3"
-                    step="0.1"
-                    value={imageScale}
-                    onChange={handleScaleChange}
-                    className="flex-1"
-                  />
-                  <span className="text-sm text-gray-500">3×</span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={resetCrop}
-                    title="Сбросить позицию"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              
-              {/* Кнопки действий */}
-              <div className="flex justify-end space-x-3 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={handleCancel}
-                  disabled={isUploading}
-                >
-                  Отмена
-                </Button>
-                <Button
-                  onClick={cropAndUploadImage}
-                  disabled={isUploading}
-                >
-                  {isUploading ? 'Сохранение...' : 'Сохранить баннер'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+            // Проверяем DOM
+            setTimeout(() => {
+              const modals = document.querySelectorAll('[style*="z-index: 9999"]')
+              console.log('🔍 Found modals in DOM:', modals.length)
+              modals.forEach((modal, i) => {
+                const rect = modal.getBoundingClientRect()
+                console.log(`Modal ${i}:`, {
+                  visible: modal.offsetParent !== null,
+                  rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+                  zIndex: getComputedStyle(modal).zIndex,
+                  opacity: getComputedStyle(modal).opacity,
+                  display: getComputedStyle(modal).display
+                })
+              })
+            }, 100)
+            
+            return portal
+          } catch (error) {
+            console.error('🔴 Portal creation error:', error)
+            return null
+          }
+        }
+        
+        console.log('🔴 Not rendering portal')
+        return null
+      })()}
 
       {/* Скрытый canvas для обрезки */}
       <canvas ref={canvasRef} className="hidden" />
