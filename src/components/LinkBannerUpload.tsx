@@ -191,51 +191,97 @@ export default function LinkBannerUpload({
       canvas.height = BANNER_HEIGHT
 
       const img = new Image()
-      img.onload = async () => {
-        // Вычисляем масштабы для финального изображения
-        const cropperWidth = 450
-        const cropperHeight = 150
-        const scaleFactorX = BANNER_WIDTH / cropperWidth
-        const scaleFactorY = BANNER_HEIGHT / cropperHeight
-
-        // Очищаем canvas
-        ctx.clearRect(0, 0, BANNER_WIDTH, BANNER_HEIGHT)
-        
-        // Рисуем обрезанное изображение
-        ctx.drawImage(
-          img,
-          -cropPosition.x * scaleFactorX,
-          -cropPosition.y * scaleFactorY,
-          img.width * imageScale * scaleFactorX,
-          img.height * imageScale * scaleFactorY
-        )
-
-        // Конвертируем в blob
-        canvas.toBlob(async (blob) => {
-          if (!blob) throw new Error('Failed to create blob')
-
-          // В реальном приложении здесь будет загрузка в Cloudinary
-          // С трансформациями: ar_3:1, c_fill, g_auto, f_auto, q_auto
-          const tempUrl = URL.createObjectURL(blob)
-          
-          // Имитируем загрузку
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          
-          onBannerChange(tempUrl)
-          setShowCropper(false)
-          setSelectedImage(null)
-          
-          // Очищаем input
-          if (fileInputRef.current) {
-            fileInputRef.current.value = ''
-          }
-        }, 'image/jpeg', 0.9)
+      
+      // Обработчик ошибки загрузки изображения
+      img.onerror = () => {
+        console.error('Error loading image for cropping')
+        alert('Ошибка при загрузке изображения')
+        setIsUploading(false)
       }
+
+      img.onload = async () => {
+        try {
+          // Вычисляем масштабы для финального изображения
+          const cropperWidth = 450
+          const cropperHeight = 150
+          const scaleFactorX = BANNER_WIDTH / cropperWidth
+          const scaleFactorY = BANNER_HEIGHT / cropperHeight
+
+          // Очищаем canvas
+          ctx.clearRect(0, 0, BANNER_WIDTH, BANNER_HEIGHT)
+          
+          // Рисуем обрезанное изображение
+          ctx.drawImage(
+            img,
+            -cropPosition.x * scaleFactorX,
+            -cropPosition.y * scaleFactorY,
+            img.width * imageScale * scaleFactorX,
+            img.height * imageScale * scaleFactorY
+          )
+
+          // Конвертируем в blob
+          canvas.toBlob(async (blob) => {
+            if (!blob) {
+              throw new Error('Failed to create blob')
+            }
+
+            try {
+              console.log('🟢 Starting real Cloudinary upload...')
+
+              // РЕАЛЬНАЯ загрузка в Cloudinary через наш API
+              const formData = new FormData()
+              formData.append('banner', blob, 'banner.jpg')
+
+              const response = await fetch('/api/upload/banner', {
+                method: 'POST',
+                body: formData
+              })
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+                throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+              }
+
+              const data = await response.json()
+              
+              if (!data.success || !data.url) {
+                throw new Error('Invalid response from upload API')
+              }
+
+              console.log('🟢 Upload successful:', data.url)
+
+              // Обновляем баннер с реальным URL из Cloudinary
+              onBannerChange(data.url)
+              setShowCropper(false)
+              setSelectedImage(null)
+              
+              // Очищаем input
+              if (fileInputRef.current) {
+                fileInputRef.current.value = ''
+              }
+
+            } catch (uploadError) {
+              console.error('Upload error:', uploadError)
+              alert(`Ошибка загрузки: ${uploadError.message}`)
+            } finally {
+              setIsUploading(false)
+            }
+
+          }, 'image/jpeg', 0.9)
+
+        } catch (canvasError) {
+          console.error('Canvas processing error:', canvasError)
+          alert(`Ошибка при обработке изображения: ${canvasError.message}`)
+          setIsUploading(false)
+        }
+      }
+
+      // Запускаем загрузку изображения
       img.src = selectedImage
+
     } catch (error) {
-      console.error('Error cropping image:', error)
-      alert('Ошибка при обработке изображения')
-    } finally {
+      console.error('Error in cropAndUploadImage:', error)
+      alert(`Ошибка при обработке изображения: ${error.message}`)
       setIsUploading(false)
     }
   }, [selectedImage, cropPosition, imageScale, onBannerChange])
@@ -395,7 +441,8 @@ export default function LinkBannerUpload({
           className="bg-gradient-to-r from-gray-100 to-gray-200 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden cursor-pointer hover:border-gray-400 transition-colors"
           style={{ 
             width: '75%',  // уменьшаем ширину на 25%
-            aspectRatio: '3/1'  // сохраняем пропорции 3:1
+            aspectRatio: '3/1',  // сохраняем пропорции 3:1
+            margin: '0 auto'
           }}
           onClick={() => fileInputRef.current?.click()}
         >
