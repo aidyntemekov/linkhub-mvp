@@ -168,9 +168,42 @@ export default function LinkBannerUpload({
     setIsDragging(false)
   }, [])
 
+  // Исправленная функция изменения масштаба
   const handleScaleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setImageScale(parseFloat(e.target.value))
-  }, [])
+    const newScale = parseFloat(e.target.value)
+    const oldScale = imageScale
+    
+    if (!imageRef.current) {
+      setImageScale(newScale)
+      return
+    }
+
+    // Получаем центр кроппера
+    const cropperWidth = 450
+    const cropperHeight = 150
+    const centerX = cropperWidth / 2
+    const centerY = cropperHeight / 2
+
+    // Вычисляем текущую позицию центра изображения относительно центра кроппера
+    const img = imageRef.current
+    const currentImageCenterX = cropPosition.x + (img.naturalWidth * oldScale) / 2
+    const currentImageCenterY = cropPosition.y + (img.naturalHeight * oldScale) / 2
+
+    // Вычисляем смещение центра от центра кроппера
+    const offsetX = currentImageCenterX - centerX
+    const offsetY = currentImageCenterY - centerY
+
+    // Применяем новый масштаб, сохраняя относительное положение центра
+    const newImageCenterX = centerX + offsetX * (newScale / oldScale)
+    const newImageCenterY = centerY + offsetY * (newScale / oldScale)
+
+    // Вычисляем новую позицию изображения
+    const newX = newImageCenterX - (img.naturalWidth * newScale) / 2
+    const newY = newImageCenterY - (img.naturalHeight * newScale) / 2
+
+    setImageScale(newScale)
+    setCropPosition({ x: newX, y: newY })
+  }, [imageScale, cropPosition])
 
   const resetCrop = useCallback(() => {
     handleImageLoad()
@@ -192,7 +225,6 @@ export default function LinkBannerUpload({
 
       const img = new Image()
       
-      // Обработчик ошибки загрузки изображения
       img.onerror = () => {
         console.error('Error loading image for cropping')
         alert('Ошибка при загрузке изображения')
@@ -201,22 +233,40 @@ export default function LinkBannerUpload({
 
       img.onload = async () => {
         try {
-          // Вычисляем масштабы для финального изображения
+          // ВАЖНО: Используем точные размеры кроппера из интерфейса
           const cropperWidth = 450
           const cropperHeight = 150
+          
+          // Масштабные коэффициенты для перехода от кроппера к финальному изображению
           const scaleFactorX = BANNER_WIDTH / cropperWidth
           const scaleFactorY = BANNER_HEIGHT / cropperHeight
+
+          console.log('Crop parameters:', {
+            cropPosition,
+            imageScale,
+            cropperSize: { width: cropperWidth, height: cropperHeight },
+            finalSize: { width: BANNER_WIDTH, height: BANNER_HEIGHT },
+            scaleFactors: { x: scaleFactorX, y: scaleFactorY }
+          })
 
           // Очищаем canvas
           ctx.clearRect(0, 0, BANNER_WIDTH, BANNER_HEIGHT)
           
-          // Рисуем обрезанное изображение
+          // Рисуем изображение с учетом ТОЧНОЙ позиции из кроппера
           ctx.drawImage(
             img,
-            -cropPosition.x * scaleFactorX,
-            -cropPosition.y * scaleFactorY,
-            img.width * imageScale * scaleFactorX,
-            img.height * imageScale * scaleFactorY
+            // Позиция источника (в пикселях оригинального изображения)
+            Math.max(0, -cropPosition.x / imageScale), // sourceX
+            Math.max(0, -cropPosition.y / imageScale), // sourceY  
+            // Размер области источника
+            Math.min(img.naturalWidth, cropperWidth / imageScale), // sourceWidth
+            Math.min(img.naturalHeight, cropperHeight / imageScale), // sourceHeight
+            // Позиция на canvas
+            Math.max(0, cropPosition.x * scaleFactorX), // destX
+            Math.max(0, cropPosition.y * scaleFactorY), // destY
+            // Размер на canvas
+            Math.min(BANNER_WIDTH, img.naturalWidth * imageScale * scaleFactorX), // destWidth
+            Math.min(BANNER_HEIGHT, img.naturalHeight * imageScale * scaleFactorY) // destHeight
           )
 
           // Конвертируем в blob
@@ -228,7 +278,6 @@ export default function LinkBannerUpload({
             try {
               console.log('🟢 Starting real Cloudinary upload...')
 
-              // РЕАЛЬНАЯ загрузка в Cloudinary через наш API
               const formData = new FormData()
               formData.append('banner', blob, 'banner.jpg')
 
@@ -250,12 +299,10 @@ export default function LinkBannerUpload({
 
               console.log('🟢 Upload successful:', data.url)
 
-              // Обновляем баннер с реальным URL из Cloudinary
               onBannerChange(data.url)
               setShowCropper(false)
               setSelectedImage(null)
               
-              // Очищаем input
               if (fileInputRef.current) {
                 fileInputRef.current.value = ''
               }
@@ -276,7 +323,6 @@ export default function LinkBannerUpload({
         }
       }
 
-      // Запускаем загрузку изображения
       img.src = selectedImage
 
     } catch (error) {
@@ -284,7 +330,7 @@ export default function LinkBannerUpload({
       alert(`Ошибка при обработке изображения: ${error.message}`)
       setIsUploading(false)
     }
-  }, [selectedImage, cropPosition, imageScale, onBannerChange])
+  }, [selectedImage, cropPosition, imageScale, onBannerChange, BANNER_WIDTH, BANNER_HEIGHT])
 
   const handleCancel = useCallback(() => {
     setShowCropper(false)
