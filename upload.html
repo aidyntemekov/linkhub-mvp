@@ -71,7 +71,8 @@
         log("1) Запрашиваем signed upload…");
         const startRes = await fetch(`${EDGE_BASE}/start`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY,
+  "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
           body: JSON.stringify({
             job_id,
             token,
@@ -100,7 +101,8 @@
         log("3) Подтверждаем загрузку (complete)…");
         const completeRes = await fetch(`${EDGE_BASE}/complete`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY,
+  "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
           body: JSON.stringify({
             job_id,
             token,
