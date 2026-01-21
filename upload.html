@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stom — загрузка аудио</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;max-width:720px}
+    .row{margin:12px 0}
+    #log{white-space:pre-wrap;background:#f5f5f5;padding:12px;border-radius:8px}
+    button{padding:10px 14px}
+  </style>
+</head>
+<body>
+  <h2>Загрузка аудио</h2>
+
+  <div class="row">
+    <div>job_id: <code id="job"></code></div>
+    <div>token: <code id="tok"></code></div>
+  </div>
+
+  <div class="row">
+    <input id="file" type="file" accept="audio/*" />
+  </div>
+
+  <div class="row">
+    <button id="btn">Загрузить</button>
+  </div>
+
+  <div id="log"></div>
+
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+
+    // === НАСТРОЙКИ ===
+    const SUPABASE_URL = "https://<PROJECT_REF>.supabase.co";
+    const SUPABASE_ANON_KEY = "<SUPABASE_ANON_KEY>";
+    const EDGE_BASE = "https://<PROJECT_REF>.supabase.co/functions/v1/stom-audio-upload";
+    // ===============
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const qs = new URLSearchParams(location.search);
+    const job_id = qs.get("job_id");
+    const token = qs.get("token");
+
+    const jobEl = document.getElementById("job");
+    const tokEl = document.getElementById("tok");
+    const logEl = document.getElementById("log");
+    const fileEl = document.getElementById("file");
+    const btn = document.getElementById("btn");
+
+    jobEl.textContent = job_id || "(нет job_id)";
+    tokEl.textContent = token ? (token.slice(0, 6) + "…") : "(нет token)";
+
+    function log(...args) {
+      logEl.textContent += args.map(a => typeof a === "string" ? a : JSON.stringify(a, null, 2)).join(" ") + "\n";
+    }
+
+    if (!job_id || !token) {
+      log("Ошибка: нет job_id или token в URL. Ожидается /upload?job_id=...&token=...");
+    }
+
+    btn.onclick = async () => {
+      try {
+        logEl.textContent = "";
+        if (!job_id || !token) throw new Error("Нет job_id/token в URL");
+        const file = fileEl.files?.[0];
+        if (!file) throw new Error("Выбери аудиофайл");
+
+        log("1) Запрашиваем signed upload…");
+        const startRes = await fetch(`${EDGE_BASE}/start`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_id,
+            token,
+            filename: file.name,
+            mime: file.type || "application/octet-stream",
+          }),
+        });
+
+        const startJson = await startRes.json();
+        if (!startRes.ok) throw new Error(`start error: ${JSON.stringify(startJson)}`);
+
+        const { bucket, path, signed_upload_token } = startJson;
+        log("start ok:", { bucket, path });
+
+        log("2) Загружаем файл в Storage…");
+        const { data: upData, error: upErr } = await supabase
+          .storage
+          .from(bucket)
+          .uploadToSignedUrl(path, signed_upload_token, file, {
+            contentType: file.type || "application/octet-stream",
+          });
+
+        if (upErr) throw upErr;
+        log("upload ok:", upData);
+
+        log("3) Подтверждаем загрузку (complete)…");
+        const completeRes = await fetch(`${EDGE_BASE}/complete`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            job_id,
+            token,
+            storage_path: path,
+            size_bytes: file.size,
+            mime: file.type || "application/octet-stream",
+          }),
+        });
+
+        const completeJson = await completeRes.json();
+        if (!completeRes.ok) throw new Error(`complete error: ${JSON.stringify(completeJson)}`);
+
+        log("Готово:", completeJson);
+      } catch (e) {
+        log("Ошибка:", String(e?.message || e));
+      }
+    };
+  </script>
+</body>
+</html>
