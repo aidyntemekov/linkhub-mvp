@@ -11,8 +11,8 @@
     .row{margin:14px 0}
     .btn{padding:12px 16px;border-radius:10px;border:0;background:#111;color:#fff;cursor:pointer}
     .btn:disabled{opacity:.5;cursor:not-allowed}
-    .status{display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;background:#f6f7f8}
-    .dot{width:10px;height:10px;border-radius:50%;background:#999}
+    .status{display:flex;align-items:flex-start;gap:10px;padding:12px;border-radius:12px;background:#f6f7f8}
+    .dot{width:10px;height:10px;border-radius:50%;background:#999;margin-top:6px}
     .dot.ok{background:#2e7d32}
     .dot.err{background:#c62828}
     .dot.work{background:#1565c0}
@@ -21,6 +21,8 @@
     .error{border:1px solid #ffcdd2;background:#ffebee}
     h1{font-size:20px;margin:0 0 6px}
     .big{font-size:22px;font-weight:700}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .details{white-space:pre-wrap;background:#fff;border:1px dashed #ddd;border-radius:10px;padding:10px;margin-top:10px;display:none}
   </style>
 </head>
 <body>
@@ -38,9 +40,11 @@
 
     <div id="status" class="status row">
       <div id="dot" class="dot"></div>
-      <div>
+      <div style="flex:1">
         <div id="title">Ожидаю файл…</div>
         <div id="subtitle" class="muted"></div>
+
+        <div id="details" class="details mono"></div>
       </div>
     </div>
 
@@ -53,11 +57,14 @@
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-    // === НАСТРОЙКИ ===
+    // === НАСТРОЙКИ (ОБЯЗАТЕЛЬНО ПРОВЕРЬ) ===
     const SUPABASE_URL = "https://gkpkxedbbejcnwucgyck.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_DkwI7Hs3rz-0ulu9X4aJmA_3L3zTYNR";
     const EDGE_BASE = "https://gkpkxedbbejcnwucgyck.supabase.co/functions/v1/stom-audio-upload";
-    // ===============
+    // =======================================
+
+    // JWT В HEADERS НЕ НУЖЕН, потому что verify_jwt = false у Edge Function.
+    // Если включишь verify_jwt обратно — тогда нужен реальный user JWT, а не anon key.
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -71,6 +78,8 @@
     const dot = document.getElementById("dot");
     const title = document.getElementById("title");
     const subtitle = document.getElementById("subtitle");
+    const details = document.getElementById("details");
+
     const progressWrap = document.getElementById("progressWrap");
     const progress = document.getElementById("progress");
     const progressText = document.getElementById("progressText");
@@ -82,13 +91,30 @@
       statusEl.className = "status row" + (type === "ok" ? " success" : type === "err" ? " error" : "");
     }
 
-    function humanErr(msg){
-      const s = String(msg || "");
+    function showDetails(text) {
+      details.style.display = "block";
+      details.textContent = String(text || "").slice(0, 2000);
+    }
+
+    function hideDetails() {
+      details.style.display = "none";
+      details.textContent = "";
+    }
+
+    function humanErr(raw){
+      const s = String(raw || "");
       if (s.includes("bad_token")) return "Ссылка недействительна. Запросите новую в Telegram-боте.";
       if (s.includes("job_not_found")) return "Задача не найдена. Запросите новую ссылку в боте.";
-      if (s.includes("bad_status")) return "Этот файл уже загружен или ссылка уже использована. Запросите новую.";
-      if (s.includes("storage_error")) return "Не получилось загрузить в хранилище. Попробуйте ещё раз.";
+      if (s.includes("bad_status")) return "Эта ссылка уже использована. Запросите новую.";
+      if (s.includes("Missing authorization header") || s.includes("Invalid JWT"))
+        return "Авторизация функции настроена неверно. Проверь verify_jwt у Edge Function.";
+      if (s.toLowerCase().includes("cors")) return "Ошибка CORS. Проверь настройки домена/заголовков.";
+      if (s.toLowerCase().includes("storage")) return "Не получилось загрузить в хранилище. Попробуйте ещё раз.";
       return "Ошибка загрузки. Попробуйте ещё раз или запросите новую ссылку в боте.";
+    }
+
+    function prettyJson(obj) {
+      try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
     }
 
     if (!job_id || !token) {
@@ -99,7 +125,15 @@
     }
 
     btn.onclick = async () => {
+      let tmr = null;
       try {
+        hideDetails();
+
+        // быстрые проверки
+        if (!job_id || !token) throw new Error("missing job_id/token");
+        if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes("PASTE_YOUR_SUPABASE_ANON_KEY_HERE"))
+          throw new Error("SUPABASE_ANON_KEY is not set");
+
         const file = fileEl.files?.[0];
         if (!file) {
           setState("err", "Выберите файл", "Нужно выбрать аудиофайл перед загрузкой.");
@@ -110,7 +144,7 @@
         fileEl.disabled = true;
 
         progressWrap.style.display = "block";
-        progress.value = 5;
+        progress.value = 3;
         progressText.textContent = "Подготовка…";
 
         setState("work", "Подготавливаю загрузку…", "");
@@ -128,23 +162,38 @@
         });
 
         const startJson = await startRes.json().catch(() => ({}));
-        if (!startRes.ok) throw new Error(JSON.stringify(startJson));
+        if (!startRes.ok) {
+          showDetails("start error:\n" + prettyJson(startJson));
+          throw new Error(prettyJson(startJson));
+        }
 
         const { bucket, path, signed_upload_token } = startJson;
 
         progress.value = 20;
         progressText.textContent = "Загрузка файла…";
-        setState("work", "Загружаю файл…", "Не закрывайте страницу, пока загрузка не завершится.");
+        setState("work", "Загружаю файл…", "Не закрывайте страницу, пока не появится “Готово”.");
+
+        // анти-“зависло”: секундомер
+        let sec = 0;
+        tmr = setInterval(() => {
+          sec += 1;
+          subtitle.textContent = `Идёт загрузка… (${sec} сек). Не закрывайте страницу.`;
+        }, 1000);
 
         // 2) upload
-        const { error: upErr } = await supabase
+        const { data: upData, error: upErr } = await supabase
           .storage
           .from(bucket)
           .uploadToSignedUrl(path, signed_upload_token, file, {
             contentType: file.type || "application/octet-stream",
           });
 
-        if (upErr) throw upErr;
+        if (upErr) {
+          showDetails("upload error:\n" + prettyJson(upErr));
+          throw upErr;
+        }
+
+        clearInterval(tmr); tmr = null;
 
         progress.value = 85;
         progressText.textContent = "Завершаю…";
@@ -164,7 +213,10 @@
         });
 
         const completeJson = await completeRes.json().catch(() => ({}));
-        if (!completeRes.ok) throw new Error(JSON.stringify(completeJson));
+        if (!completeRes.ok) {
+          showDetails("complete error:\n" + prettyJson(completeJson));
+          throw new Error(prettyJson(completeJson));
+        }
 
         progress.value = 100;
         progressText.textContent = "Готово";
@@ -172,8 +224,16 @@
         setState("ok", "Готово ✅", "Загрузка завершена. Страницу можно закрыть.");
         title.classList.add("big");
 
+        // (опционально) заблокировать повторную отправку
+        btn.disabled = true;
+
       } catch (e) {
+        if (tmr) { try { clearInterval(tmr); } catch {} }
         setState("err", "Не удалось загрузить", humanErr(e?.message || e));
+        // показываем тех.детали, если их ещё не показали
+        if (details.style.display !== "block") {
+          showDetails("tech:\n" + String(e?.message || e));
+        }
         btn.disabled = false;
         fileEl.disabled = false;
         progressWrap.style.display = "none";
