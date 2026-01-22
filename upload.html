@@ -3,38 +3,59 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Stom — загрузка аудио</title>
+  <title>Загрузка аудио</title>
   <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;max-width:720px}
-    .row{margin:12px 0}
-    #log{white-space:pre-wrap;background:#f5f5f5;padding:12px;border-radius:8px}
-    button{padding:10px 14px}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:24px;max-width:640px}
+    .card{border:1px solid #e6e6e6;border-radius:14px;padding:18px}
+    .muted{color:#666}
+    .row{margin:14px 0}
+    .btn{padding:12px 16px;border-radius:10px;border:0;background:#111;color:#fff;cursor:pointer}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .status{display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;background:#f6f7f8}
+    .dot{width:10px;height:10px;border-radius:50%;background:#999}
+    .dot.ok{background:#2e7d32}
+    .dot.err{background:#c62828}
+    .dot.work{background:#1565c0}
+    progress{width:100%;height:14px}
+    .success{border:1px solid #c8e6c9;background:#e8f5e9}
+    .error{border:1px solid #ffcdd2;background:#ffebee}
+    h1{font-size:20px;margin:0 0 6px}
+    .big{font-size:22px;font-weight:700}
   </style>
 </head>
 <body>
-  <h2>Загрузка аудио</h2>
+  <div class="card">
+    <h1>Загрузка аудио</h1>
+    <div class="muted">Выберите файл и дождитесь сообщения “Готово”.</div>
 
-  <div class="row">
-    <div>job_id: <code id="job"></code></div>
-    <div>token: <code id="tok"></code></div>
+    <div class="row">
+      <input id="file" type="file" accept="audio/*" />
+    </div>
+
+    <div class="row">
+      <button id="btn" class="btn">Загрузить</button>
+    </div>
+
+    <div id="status" class="status row">
+      <div id="dot" class="dot"></div>
+      <div>
+        <div id="title">Ожидаю файл…</div>
+        <div id="subtitle" class="muted"></div>
+      </div>
+    </div>
+
+    <div class="row" id="progressWrap" style="display:none">
+      <progress id="progress" value="0" max="100"></progress>
+      <div class="muted" id="progressText" style="margin-top:6px"></div>
+    </div>
   </div>
-
-  <div class="row">
-    <input id="file" type="file" accept="audio/*" />
-  </div>
-
-  <div class="row">
-    <button id="btn">Загрузить</button>
-  </div>
-
-  <div id="log"></div>
 
   <script type="module">
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
     // === НАСТРОЙКИ ===
     const SUPABASE_URL = "https://gkpkxedbbejcnwucgyck.supabase.co";
-    const SUPABASE_ANON_KEY = "sb_publishable_DkwI7Hs3rz-0ulu9X4aJmA_3L3zTYNR";
+    const SUPABASE_ANON_KEY = "<SUPABASE_ANON_KEY>";
     const EDGE_BASE = "https://gkpkxedbbejcnwucgyck.supabase.co/functions/v1/stom-audio-upload";
     // ===============
 
@@ -44,35 +65,60 @@
     const job_id = qs.get("job_id");
     const token = qs.get("token");
 
-    const jobEl = document.getElementById("job");
-    const tokEl = document.getElementById("tok");
-    const logEl = document.getElementById("log");
     const fileEl = document.getElementById("file");
     const btn = document.getElementById("btn");
+    const statusEl = document.getElementById("status");
+    const dot = document.getElementById("dot");
+    const title = document.getElementById("title");
+    const subtitle = document.getElementById("subtitle");
+    const progressWrap = document.getElementById("progressWrap");
+    const progress = document.getElementById("progress");
+    const progressText = document.getElementById("progressText");
 
-    jobEl.textContent = job_id || "(нет job_id)";
-    tokEl.textContent = token ? (token.slice(0, 6) + "…") : "(нет token)";
+    function setState(type, t, sub="") {
+      dot.className = "dot" + (type ? ` ${type}` : "");
+      title.textContent = t;
+      subtitle.textContent = sub;
+      statusEl.className = "status row" + (type === "ok" ? " success" : type === "err" ? " error" : "");
+    }
 
-    function log(...args) {
-      logEl.textContent += args.map(a => typeof a === "string" ? a : JSON.stringify(a, null, 2)).join(" ") + "\n";
+    function humanErr(msg){
+      const s = String(msg || "");
+      if (s.includes("bad_token")) return "Ссылка недействительна. Запросите новую в Telegram-боте.";
+      if (s.includes("job_not_found")) return "Задача не найдена. Запросите новую ссылку в боте.";
+      if (s.includes("bad_status")) return "Этот файл уже загружен или ссылка уже использована. Запросите новую.";
+      if (s.includes("storage_error")) return "Не получилось загрузить в хранилище. Попробуйте ещё раз.";
+      return "Ошибка загрузки. Попробуйте ещё раз или запросите новую ссылку в боте.";
     }
 
     if (!job_id || !token) {
-      log("Ошибка: нет job_id или token в URL. Ожидается /upload?job_id=...&token=...");
+      setState("err", "Неверная ссылка", "Откройте ссылку из Telegram-бота ещё раз.");
+      btn.disabled = true;
+    } else {
+      setState("", "Ожидаю файл…", "");
     }
 
     btn.onclick = async () => {
       try {
-        logEl.textContent = "";
-        if (!job_id || !token) throw new Error("Нет job_id/token в URL");
         const file = fileEl.files?.[0];
-        if (!file) throw new Error("Выбери аудиофайл");
+        if (!file) {
+          setState("err", "Выберите файл", "Нужно выбрать аудиофайл перед загрузкой.");
+          return;
+        }
 
-        log("1) Запрашиваем signed upload…");
+        btn.disabled = true;
+        fileEl.disabled = true;
+
+        progressWrap.style.display = "block";
+        progress.value = 5;
+        progressText.textContent = "Подготовка…";
+
+        setState("work", "Подготавливаю загрузку…", "");
+
+        // 1) start
         const startRes = await fetch(`${EDGE_BASE}/start`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY,
-  "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             job_id,
             token,
@@ -81,14 +127,17 @@
           }),
         });
 
-        const startJson = await startRes.json();
-        if (!startRes.ok) throw new Error(`start error: ${JSON.stringify(startJson)}`);
+        const startJson = await startRes.json().catch(() => ({}));
+        if (!startRes.ok) throw new Error(JSON.stringify(startJson));
 
         const { bucket, path, signed_upload_token } = startJson;
-        log("start ok:", { bucket, path });
 
-        log("2) Загружаем файл в Storage…");
-        const { data: upData, error: upErr } = await supabase
+        progress.value = 20;
+        progressText.textContent = "Загрузка файла…";
+        setState("work", "Загружаю файл…", "Не закрывайте страницу, пока загрузка не завершится.");
+
+        // 2) upload
+        const { error: upErr } = await supabase
           .storage
           .from(bucket)
           .uploadToSignedUrl(path, signed_upload_token, file, {
@@ -96,13 +145,15 @@
           });
 
         if (upErr) throw upErr;
-        log("upload ok:", upData);
 
-        log("3) Подтверждаем загрузку (complete)…");
+        progress.value = 85;
+        progressText.textContent = "Завершаю…";
+        setState("work", "Подтверждаю загрузку…", "");
+
+        // 3) complete
         const completeRes = await fetch(`${EDGE_BASE}/complete`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "apikey": SUPABASE_ANON_KEY,
-  "Authorization": `Bearer ${SUPABASE_ANON_KEY}` },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             job_id,
             token,
@@ -112,12 +163,20 @@
           }),
         });
 
-        const completeJson = await completeRes.json();
-        if (!completeRes.ok) throw new Error(`complete error: ${JSON.stringify(completeJson)}`);
+        const completeJson = await completeRes.json().catch(() => ({}));
+        if (!completeRes.ok) throw new Error(JSON.stringify(completeJson));
 
-        log("Готово:", completeJson);
+        progress.value = 100;
+        progressText.textContent = "Готово";
+
+        setState("ok", "Готово ✅", "Загрузка завершена. Страницу можно закрыть.");
+        title.classList.add("big");
+
       } catch (e) {
-        log("Ошибка:", String(e?.message || e));
+        setState("err", "Не удалось загрузить", humanErr(e?.message || e));
+        btn.disabled = false;
+        fileEl.disabled = false;
+        progressWrap.style.display = "none";
       }
     };
   </script>
